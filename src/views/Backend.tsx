@@ -147,7 +147,7 @@ export default function Backend() {
               <div className="space-y-2.5 mt-1">
                 {[
                   { l: 'WebSocket', v: 'wss://api.highlyagent.io/ws' },
-                  { l: 'REST base', v: 'https://api.highlyagent.io/api/v1' },
+                  { l: 'REST base', v: 'https://api.highlyagent.io' },
                   { l: 'Health', v: 'https://api.highlyagent.io/health' },
                 ].map((e) => (
                   <div key={e.l} className="flex items-center justify-between gap-2">

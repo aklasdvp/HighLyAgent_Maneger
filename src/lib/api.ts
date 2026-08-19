@@ -37,7 +37,7 @@ export const WS_URL: string =
   read('hla.ws') || env.VITE_WS_URL || `${API_URL.replace(/^http/, 'ws')}/ws`;
 
 /** true → dashboard runs on its built-in demo data store (no backend needed).
- *  false → real API calls against VITE_API_URL (JWT login via /api/v1/auth/*). */
+ *  false → real API calls against VITE_API_URL (JWT login via /auth/*). */
 export const SIMULATED: boolean = (env.VITE_SIMULATED ?? 'true') !== 'false';
 
 export class ApiError extends Error {
@@ -79,24 +79,24 @@ export const api = {
 
   /* ── auth plane (admin JWT — no API key needed) ── */
   setup: (username: string, email: string, password: string) =>
-    http<TokenPair>('/api/v1/auth/setup', { method: 'POST', body: JSON.stringify({ username, email, password }) }),
+    http<TokenPair>('/auth/setup', { method: 'POST', body: JSON.stringify({ username, email, password }) }),
   login: (identifier: string, password: string) =>
-    http<TokenPair>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ identifier, password }) }),
+    http<TokenPair>('/auth/login', { method: 'POST', body: JSON.stringify({ identifier, password }) }),
   refresh: (refresh_token: string) =>
-    http<TokenPair>('/api/v1/auth/refresh', { method: 'POST', body: JSON.stringify({ refresh_token }) }),
+    http<TokenPair>('/auth/refresh', { method: 'POST', body: JSON.stringify({ refresh_token }) }),
   me: (token: string) =>
-    http<{ sub: string; role: string }>('/api/v1/auth/me', { headers: bearer(token) }),
+    http<{ sub: string; role: string }>('/auth/me', { headers: bearer(token) }),
 
   /* ── admin plane ── */
   projects: (token: string) =>
-    http<unknown[]>('/api/v1/projects', { headers: bearer(token) }),
+    http<unknown[]>('/projects', { headers: bearer(token) }),
   rotateKey: (token: string, projectId: string) =>
-    http<{ key: unknown; visible_key: string }>(`/api/v1/projects/${projectId}/keys/rotate`,
+    http<{ key: unknown; visible_key: string }>(`/projects/${projectId}/keys/rotate`,
       { method: 'POST', headers: bearer(token) }),
 
   /* ── client plane — dual-factor: project id + api key, mismatch → 403 ACCESS_DENIED ── */
   agentProcess: (clientId: string, apiKey: string, body: { user_ref: string; text: string }) =>
-    http<AgentReply>('/api/v1/agent/process', {
+    http<AgentReply>('/agent/process', {
       method: 'POST',
       headers: { 'X-Client-Id': clientId, 'X-API-Key': apiKey },
       body: JSON.stringify(body),

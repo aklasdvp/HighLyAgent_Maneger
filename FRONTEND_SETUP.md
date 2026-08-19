@@ -37,4 +37,4 @@ npm run electron
 Electron loads only the local `dist/` bundle with context isolation and disabled Node integration.
 
 ## Backend contract
-The dashboard uses FastAPI endpoints under `/api/v1` plus `/health`, and real-time traffic at `/ws`. See the backend `API_REFERENCE.md`.
+The dashboard uses FastAPI endpoints under `` plus `/health`, and real-time traffic at `/ws`. See the backend `API_REFERENCE.md`.
