@@ -96,7 +96,7 @@ export const api = {
 
   /* ── client plane — dual-factor: project id + api key, mismatch → 403 ACCESS_DENIED ── */
   agentProcess: (clientId: string, apiKey: string, body: { user_ref: string; text: string }) =>
-    http<AgentReply>('/api/agent/process', {
+    http<AgentReply>('/api/v1/agent/process', {
       method: 'POST',
       headers: { 'X-Client-Id': clientId, 'X-API-Key': apiKey },
       body: JSON.stringify(body),
