@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../lib/store';
 import { useToast } from '../components/toast';
+import { api, SIMULATED } from '../lib/api';
 import type { ClientType } from '../lib/data';
 import { fmt, maskKey } from '../lib/data';
 import {
@@ -24,6 +25,7 @@ export default function Projects({ onOpen }: { onOpen: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: '', type: 'web' as ClientType, env: 'production', desc: '' });
   const [err, setErr] = useState('');
+  const [rotating, setRotating] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -33,32 +35,97 @@ export default function Projects({ onOpen }: { onOpen: (id: string) => void }) {
     );
   }, [state.clients, q, type]);
 
-  const create = () => {
+  const create = async () => {
     if (form.name.trim().length < 2) return setErr('Project name must be at least 2 characters.');
-    const c = actions.addClient({ ...form, name: form.name.trim() });
-    push(`${c.name} registered — project API key issued`);
-    setOpen(false);
-    setForm({ name: '', type: 'web', env: 'production', desc: '' });
-    setErr('');
-    onOpen(c.id);
+    
+    try {
+      if (SIMULATED) {
+        // Demo mode
+        const c = actions.addClient({ ...form, name: form.name.trim() });
+        push(`${c.name} registered — project API key issued`);
+        setOpen(false);
+        setForm({ name: '', type: 'web', env: 'production', desc: '' });
+        setErr('');
+        onOpen(c.id);
+      } else {
+        // Real backend
+        if (!state.session?.accessToken) {
+          push('Not authenticated', 'warn');
+          return;
+        }
+        const res = await api.createProject(state.session.accessToken, {
+          name: form.name.trim(),
+          type: form.type,
+          env: form.env,
+          desc: form.desc,
+        });
+        actions.addClient({ ...form, name: form.name.trim() });
+        push(`${form.name.trim()} registered — API key issued`);
+        setOpen(false);
+        setForm({ name: '', type: 'web', env: 'production', desc: '' });
+        setErr('');
+      }
+    } catch (e) {
+      setErr((e as Error).message || 'Failed to create project');
+      push((e as Error).message || 'Failed to create project', 'danger');
+    }
   };
 
   const del = async (id: string, name: string) => {
     const ok = await confirm({
       title: 'Delete project?',
-      message: <>“{name}” will be removed together with its API key, knowledge entries and user ledger. Client apps using this project will receive <span className="font-mono text-alarm-400">403 ACCESS_DENIED</span>.</>,
+      message: <>"{name}" will be removed together with its API key, knowledge entries and user ledger. Client apps using this project will receive 403 ACCESS_DENIED.</>,
       confirmLabel: 'Delete project',
       tone: 'danger',
     });
     if (ok) {
-      actions.removeClient(id);
-      push(`${name} deleted — key revoked`);
+      try {
+        if (!SIMULATED && state.session?.accessToken) {
+          await api.deleteProject(state.session.accessToken, id);
+        }
+        actions.removeClient(id);
+        push(`${name} deleted — key revoked`);
+      } catch (e) {
+        push((e as Error).message || 'Failed to delete project', 'danger');
+      }
     }
   };
 
   const toggleSuspend = (id: string, name: string, suspended: boolean) => {
     actions.updateClient(id, { status: suspended ? 'active' : 'suspended' });
     push(`${name} ${suspended ? 'reactivated' : 'suspended'}`);
+  };
+
+  const rotateKey = async (id: string, name: string) => {
+    const ok = await confirm({
+      title: 'Regenerate API key?',
+      message: <>The current key will be revoked immediately. Any active clients using "{name}" will receive 401 INVALID_KEY on the next request.</>,
+      confirmLabel: 'Regenerate',
+      tone: 'warn',
+    });
+    if (!ok) return;
+
+    setRotating(id);
+    try {
+      if (SIMULATED) {
+        // Demo mode
+        const newKey = actions.regenKey(id);
+        push(`API key rotated for ${name} — old key revoked`);
+      } else {
+        // Real backend
+        if (!state.session?.accessToken) {
+          push('Not authenticated', 'warn');
+          return;
+        }
+        const res = await api.rotateKey(state.session.accessToken, id);
+        actions.updateClient(id, { apiKey: res.visible_key });
+        push(`API key rotated for ${name} — old key revoked`, 'success');
+      }
+    } catch (e) {
+      push((e as Error).message || 'Failed to rotate key', 'danger');
+    } finally {
+      setRotating(null);
+    }
   };
 
   return (
@@ -106,7 +173,7 @@ export default function Projects({ onOpen }: { onOpen: (id: string) => void }) {
         </div>
       ) : filtered.length === 0 ? (
         <div className="panel">
-          <EmptyState icon="search" title="No match" desc={`Nothing matches “${q}” with the current filters.`} />
+          <EmptyState icon="search" title="No match" desc={`Nothing matches "${q}" with the current filters.`} />
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -148,13 +215,19 @@ export default function Projects({ onOpen }: { onOpen: (id: string) => void }) {
 
               <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-ink-700">
                 <code className="font-mono text-[10.5px] text-mist-500 truncate grow">{maskKey(c.apiKey)}</code>
-                <CopyBtn text={c.apiKey} />
+                <CopyBtn text={c.apiKey} title="Copy full API key" />
               </div>
 
               <div className="flex items-center gap-1.5 mt-3">
                 <Btn variant="pulse" size="sm" className="grow" onClick={() => onOpen(c.id)}>
                   Open console <Icon name="arrow" size={12} />
                 </Btn>
+                <IconBtn
+                  icon="refresh"
+                  title="Regenerate API key"
+                  onClick={() => rotateKey(c.id, c.name)}
+                  disabled={rotating === c.id}
+                />
                 <IconBtn
                   icon={c.status === 'active' ? 'pause' : 'play'}
                   title={c.status === 'active' ? 'Suspend project' : 'Reactivate project'}
@@ -205,7 +278,7 @@ export default function Projects({ onOpen }: { onOpen: (id: string) => void }) {
         <div className="flex items-start gap-2.5 mt-2 p-3 rounded-lg bg-ink-900/70 border border-ink-700">
           <Icon name="key" size={14} className="text-signal-400 shrink-0 mt-0.5" />
           <p className="text-[11.5px] text-mist-400 leading-relaxed">
-            A project-scoped API key is generated on registration. Client calls require <span className="font-mono text-mist-300">X-Client-Id</span> + <span className="font-mono text-mist-300">X-API-Key</span> — a mismatch is rejected with 403.
+            A project-scoped API key is generated on registration. Client calls require <span className="font-mono text-mist-300">X-Client-Id</span> + <span className="font-mono text-mist-300">X-API-Key</span> headers for dual-factor auth.
           </p>
         </div>
       </Modal>
