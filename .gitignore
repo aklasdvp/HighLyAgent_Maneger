@@ -1,52 +1,45 @@
 ```
 # Dependencies
 node_modules/
-venv/
-.venv/
-__pycache__/
-*.egg-info/
-.Python
 
-# Build artifacts
+# Build outputs
 dist/
 build/
 target/
+
+# Python
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.so
-*.dylib
-*.dll
-*.exe
-*.o
-*.obj
-*.a
-*.lib
-
-# Environment
+.Python
+env/
+venv/
+.venv/
+.ENV
+.ENV.local
 .env
 .env.local
 .env.*
-!.env.example
 
-# Editors and IDEs
+# Logs
+*.log
+
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *.tmp
 
-# OS generated files
+# OS
 .DS_Store
 Thumbs.db
-
-# Logs
-*.log
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
 
 # Testing
 .pytest_cache/
