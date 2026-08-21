@@ -5,8 +5,12 @@ import type {
   ProviderCfg, Tool, Plan, SecuritySettings, Session, SystemConfig, Theme,
 } from './data';
 import { DEFAULT_SYSTEM, LOG_POOL, genKey, nowIso, seedState, uid } from './data';
+import { api } from './api';
 
 const STORAGE_KEY = 'hla_state_v1';
+const TOKEN_KEY = 'hl_access_token';
+const REFRESH_KEY = 'hl_refresh_token';
+const EXPIRY_KEY = 'hl_token_expiry';
 
 function load(): AppState {
   try {
@@ -44,6 +48,8 @@ export const digest = (s: string) => {
 
 const b64 = (o: object) => { try { return btoa(JSON.stringify(o)); } catch { return 'token'; } };
 
+let refreshTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
 function makeSession(timeoutMin: number, refreshDays: number): Session {
   const now = Date.now();
   return {
@@ -53,6 +59,58 @@ function makeSession(timeoutMin: number, refreshDays: number): Session {
     expiresAt: now + timeoutMin * 60_000,
     refreshExpiresAt: now + refreshDays * 86_400_000,
   };
+}
+
+/* Clear any pending refresh timeout */
+function clearRefreshTimeout() {
+  if (refreshTimeoutId) {
+    clearTimeout(refreshTimeoutId);
+    refreshTimeoutId = null;
+  }
+}
+
+/* Schedule automatic token refresh */
+function scheduleRefresh(setState: React.Dispatch<React.SetStateAction<AppState>>, get: Get, delayMs: number) {
+  clearRefreshTimeout();
+  if (delayMs > 0) {
+    refreshTimeoutId = setTimeout(() => {
+      const s = get();
+      if (s.session) {
+        // Try to refresh via backend API
+        const refresh_token = localStorage.getItem(REFRESH_KEY);
+        if (refresh_token) {
+          api.auth.refresh(refresh_token).then((res) => {
+            const { access_token, refresh_token: new_refresh, expires_in } = res.data;
+            localStorage.setItem(TOKEN_KEY, access_token);
+            localStorage.setItem(REFRESH_KEY, new_refresh);
+            localStorage.setItem(EXPIRY_KEY, String(Date.now() + expires_in * 1000));
+            setState((st) => ({
+              ...st,
+              session: {
+                ...st.session!,
+                accessToken: access_token,
+                expiresAt: Date.now() + expires_in * 1000,
+              },
+            }));
+            scheduleRefresh(setState, get, (expires_in - 300) * 1000);
+          }).catch(() => {
+            // Refresh failed, logout
+            localStorage.removeItem(TOKEN_KEY);
+            localStorage.removeItem(REFRESH_KEY);
+            localStorage.removeItem(EXPIRY_KEY);
+            setState((st) => ({ ...st, session: null }));
+          });
+        } else {
+          // No refresh token, just extend local session
+          setState((st) => ({
+            ...st,
+            session: makeSession(st.system.sessionTimeoutMin, st.system.refreshValidDays),
+          }));
+          scheduleRefresh(setState, get, st.system.sessionTimeoutMin * 60_000 - 300_000);
+        }
+      }
+    }, delayMs);
+  }
 }
 
 export interface QueryRecord {
@@ -81,25 +139,67 @@ function makeActions(set: React.Dispatch<React.SetStateAction<AppState>>, get: G
       }));
       return true;
     },
-    login(identifier: string, password: string): boolean {
+    async login(identifier: string, password: string): Promise<boolean> {
       const s = get();
       const a = s.admin;
-      if (!a) return false;
-      const idn = identifier.trim().toLowerCase();
-      const okId = a.username.toLowerCase() === idn || a.email.toLowerCase() === idn;
-      if (!okId || a.passHash !== digest(password)) {
-        set((st) => ({ ...st, audit: [audit(idn || 'unknown', 'LOGIN_FAILED', 'invalid credentials — attempt logged'), ...st.audit], logs: [log('warn', 'auth', `failed login attempt for "${identifier.trim()}"`), ...st.logs].slice(0, 160) }));
-        return false;
+      
+      // Try backend API first
+      try {
+        const response = await api.auth.login(identifier.trim(), password);
+        const { access_token, refresh_token, expires_in } = response.data;
+        
+        // Store tokens
+        localStorage.setItem(TOKEN_KEY, access_token);
+        localStorage.setItem(REFRESH_KEY, refresh_token);
+        localStorage.setItem(EXPIRY_KEY, String(Date.now() + expires_in * 1000));
+        
+        // Fetch current user
+        const userResponse = await api.auth.me();
+        const currentUser = userResponse.data;
+        
+        set((st) => ({
+          ...st,
+          admin: { ...a, username: currentUser.username || identifier.trim(), email: currentUser.email || '' },
+          session: {
+            ...makeSession(st.system.sessionTimeoutMin, st.system.refreshValidDays),
+            accessToken: access_token,
+            expiresAt: Date.now() + expires_in * 1000,
+          },
+          audit: [audit(currentUser.username || identifier.trim(), 'LOGIN', `JWT issued via backend API`), ...st.audit],
+          logs: [log('info', 'auth', 'admin login ok — JWT from backend'), ...st.logs].slice(0, 160),
+        }));
+        
+        // Schedule token refresh (5 minutes before expiry)
+        scheduleRefresh(set, get, (expires_in - 300) * 1000);
+        
+        return true;
+      } catch (error) {
+        // Backend unavailable, fall back to local auth
+        if (!a) return false;
+        const idn = identifier.trim().toLowerCase();
+        const okId = a.username.toLowerCase() === idn || a.email.toLowerCase() === idn;
+        if (!okId || a.passHash !== digest(password)) {
+          set((st) => ({
+            ...st,
+            audit: [audit(idn || 'unknown', 'LOGIN_FAILED', 'invalid credentials — attempt logged'), ...st.audit],
+            logs: [log('warn', 'auth', `failed login attempt for "${identifier.trim()}"`), ...st.logs].slice(0, 160),
+          }));
+          return false;
+        }
+        set((st) => ({
+          ...st,
+          session: makeSession(st.system.sessionTimeoutMin, st.system.refreshValidDays),
+          audit: [audit(a.username, 'LOGIN', `JWT issued — access ${st.system.sessionTimeoutMin}m / refresh ${st.system.refreshValidDays}d`), ...st.audit],
+          logs: [log('info', 'auth', 'admin login ok — JWT pair issued (local)'), ...st.logs].slice(0, 160),
+        }));
+        return true;
       }
-      set((st) => ({
-        ...st,
-        session: makeSession(st.system.sessionTimeoutMin, st.system.refreshValidDays),
-        audit: [audit(a.username, 'LOGIN', `JWT issued — access ${st.system.sessionTimeoutMin}m / refresh ${st.system.refreshValidDays}d`), ...st.audit],
-        logs: [log('info', 'auth', 'admin login ok — JWT pair issued'), ...st.logs].slice(0, 160),
-      }));
-      return true;
     },
     logout() {
+      clearRefreshTimeout();
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(REFRESH_KEY);
+      localStorage.removeItem(EXPIRY_KEY);
       set((st) => ({
         ...st,
         session: null,
