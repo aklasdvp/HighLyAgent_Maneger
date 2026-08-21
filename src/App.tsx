@@ -14,7 +14,7 @@ import ApiKeys from './views/ApiKeys';
 import SystemSettings from './views/SystemSettings';
 import { LogsView } from './views/LogsSecurity';
 import Architecture from './views/Architecture';
-import Backend from './views/Backend';
+import { Backend } from './views/Backend';
 
 /* ---------------- routing ---------------- */
 type Route =
