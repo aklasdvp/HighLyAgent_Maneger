@@ -1,59 +1,28 @@
 ```
-# Dependencies
-requirements.txt
-
-# Docker
-Dockerfile
-docker-compose.yml
-
-# Kubernetes
-k8s.yaml
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-.venv.bak/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-*.pot
-*.pyc
-*.pyo
-.pytest_cache/
-.mypy_cache/
-
-# Environment variables
-.env
-.env.local
-.env.*
-!env.example
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
 # Build artifacts
 dist/
 build/
-target/
-*.egg-info/
+*.css
+*.js
+*.html
+
+# Dependencies
+node_modules/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+.env.local
+.env.*
+
+# Editors
+.vscode/
+.idea/
+
+# Package lock files
+package-lock.json
 ```
