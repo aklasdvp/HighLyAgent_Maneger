@@ -292,8 +292,8 @@ export default function Console() {
             ))}
           </div>
 
-          {/* input */}
-          <div className="p-4">
+          {/* input - fixed at bottom */}
+          <div className="p-4 border-t border-ink-700 bg-ink-900/50 backdrop-blur rounded-b-lg sticky bottom-0">
             <div className="flex gap-2">
               <input
                 className="field py-2.5!"
